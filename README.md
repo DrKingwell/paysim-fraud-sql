@@ -66,11 +66,13 @@ Notes from the process:
 - `TRUNCATE ... RESTART IDENTITY` is needed to reset the generated `id_transaction` after a test load.
 - Bulk inserts of ~9M rows with PK and FK checks take several minutes on a laptop.
 
-## Setup
+## How to reproduce
 
-- PostgreSQL (installed with the standard Windows installer), database `credit_risk`
-- Editor: VS Code with a PostgreSQL extension
-- Do not commit credentials or the raw CSV (large file) to the repository.
+1. Install PostgreSQL and create a database named `credit_risk`.
+2. Download `paysim.csv` from the [Kaggle dataset](https://www.kaggle.com/datasets/ealaxi/paysim1) (not included in this repo because of its size).
+3. Run `schema.sql`, then follow the steps in [Load process](#load-process), adjusting the CSV path to your machine.
+
+Tools: PostgreSQL, `psql`, VS Code.
 
 ## Next steps
 
