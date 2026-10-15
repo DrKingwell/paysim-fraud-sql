@@ -2,7 +2,7 @@
 
 Relational modelling and SQL analysis of the [PaySim](https://www.kaggle.com/datasets/ealaxi/paysim1) synthetic mobile-money dataset (Kaggle), using PostgreSQL.
 
-**Status:** schema and data load done; fraud analysis queries in progress.
+**Status:** schema and data load done; first four analysis queries written; indexes, views and the Python / Power BI connection are next.
 
 ## Goals
 
@@ -66,6 +66,30 @@ Notes from the process:
 - `TRUNCATE ... RESTART IDENTITY` is needed to reset the generated `id_transaction` after a test load.
 - Bulk inserts of ~9M rows with PK and FK checks take several minutes on a laptop.
 
+## Queries
+
+All queries live in [`queries/`](queries/) and run against the `transactions` table.
+
+| # | File | Question it answers | SQL concepts |
+|---|---|---|---|
+| 01 | [01_fraud_rate_by_type.sql](queries/01_fraud_rate_by_type.sql) | Which transaction types have the highest fraud rate? | `GROUP BY`, `COUNT`, `SUM`, `ROUND`, `ORDER BY` |
+| 02 | [02_drained_accounts.sql](queries/02_drained_accounts.sql) | How many `TRANSFER` / `CASH_OUT` transactions leave the origin account at zero, split by fraud flag? | `WHERE` with `AND` / `IN`, `GROUP BY` |
+| 03 | [03_avg_transfer_per_account.sql](queries/03_avg_transfer_per_account.sql) | What is the average transfer amount per origin account? | `WHERE`, `GROUP BY`, `HAVING`, `AVG`, `ORDER BY`, `LIMIT` |
+| 04 | [04_transfer_cashout_pattern.sql](queries/04_transfer_cashout_pattern.sql) | Is a fraudulent `TRANSFER` followed by a `CASH_OUT` from the receiving account? | self-join, table aliases, incremental filtering |
+
+Notes:
+- **Query 03 only considers accounts with 2+ transfers** (`HAVING COUNT(*) > 1`). In PaySim almost every origin account appears in a single transaction, so an "average per account" over one value is meaningless.
+- **Query 02 is a first approximation** of the draining pattern: it counts transactions that empty the origin account, without linking a transfer to a later cash-out.
+- **Query 04 tests the classic mule pattern and does not find it.** Self-joining `transactions` (transfer `t`, cash-out `c`, linked by `t.id_account_dest = c.id_account_orig`) and adding one condition at a time:
+
+  | Condition added | Pairs |
+  |---|---|
+  | `TRANSFER` + `CASH_OUT` linked by account | 572 |
+  | same `amount` | 0 |
+  | only fraudulent transfers, cash-out not before the transfer (`c.step >= t.step`) | 1 |
+
+  The 572 linked pairs are coincidences: the account cashed out early and received a transfer later, with unrelated amounts. The single fraudulent pair cashes out 18,091.05 about 481 hours after receiving 1,282,971.57, and that cash-out is not flagged as fraud. In this synthetic dataset, fraud chains cannot be followed through account names, so the draining pattern has to be studied per transaction (query 02) rather than as a transfer-to-cash-out chain.
+
 ## How to reproduce
 
 1. Install PostgreSQL and create a database named `credit_risk`.
@@ -76,8 +100,19 @@ Tools: PostgreSQL, `psql`, VS Code.
 
 ## Next steps
 
-- [ ] Fraud rate by transaction type
-- [ ] Account-draining pattern (`TRANSFER` followed by `CASH_OUT` with the same amount)
-- [ ] Customer-level averages (mean transfer amount)
-- [ ] Indexes on `transactions` foreign keys and `type`, and a comparison of query times
+Analysis
+- [x] Fraud rate by transaction type
+- [x] Account-draining pattern: drained transactions counted (query 02); `TRANSFER` followed by `CASH_OUT` tested with a self-join (query 04), pattern not present in the data
+- [x] Customer-level averages (mean transfer amount)
+- [ ] Fraud over time (`step`), e.g. fraud per day and a running total (window functions)
+
+Preparing the database for Python and Power BI
+- [ ] Indexes on `transactions` foreign keys, `type` and `is_fraud`, and a comparison of query times (`EXPLAIN ANALYZE`)
 - [ ] Views presenting merchant balances as `0` with `COALESCE`
+- [ ] One view per analysis (e.g. `v_fraud_rate_by_type`), so Python and Power BI read a small, stable result instead of 6M raw rows
+- [ ] Move the load steps (staging, `clients`, `accounts`, `transactions`) from this README into a `load.sql` script
+- [ ] Read-only database user for the BI tools
+
+Python and Power BI
+- [ ] Python: connect with SQLAlchemy + `psycopg2`, load the views into pandas, charts with matplotlib / seaborn
+- [ ] Power BI: connect through the PostgreSQL connector (import the views, not the raw table) and build a fraud dashboard
