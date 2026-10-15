@@ -2,7 +2,7 @@
 
 Relational modelling and SQL analysis of the [PaySim](https://www.kaggle.com/datasets/ealaxi/paysim1) synthetic mobile-money dataset (Kaggle), using PostgreSQL.
 
-**Status:** schema and data load done; first four analysis queries written; indexes, views and the Python / Power BI connection are next.
+**Status:** schema and data load done; first five analysis queries written; indexes, views and the Python / Power BI connection are next.
 
 ## Goals
 
@@ -76,6 +76,7 @@ All queries live in [`queries/`](queries/) and run against the `transactions` ta
 | 02 | [02_drained_accounts.sql](queries/02_drained_accounts.sql) | How many `TRANSFER` / `CASH_OUT` transactions leave the origin account at zero, split by fraud flag? | `WHERE` with `AND` / `IN`, `GROUP BY` |
 | 03 | [03_avg_transfer_per_account.sql](queries/03_avg_transfer_per_account.sql) | What is the average transfer amount per origin account? | `WHERE`, `GROUP BY`, `HAVING`, `AVG`, `ORDER BY`, `LIMIT` |
 | 04 | [04_transfer_cashout_pattern.sql](queries/04_transfer_cashout_pattern.sql) | Is a fraudulent `TRANSFER` followed by a `CASH_OUT` from the receiving account? | self-join, table aliases, incremental filtering |
+| 05 | [05_fraud_over_time.sql](queries/05_fraud_over_time.sql) | How many frauds happen per day, and what is the running total? | CTE (`WITH`), window function (`SUM() OVER (ORDER BY ...)`), integer division |
 
 Notes:
 - **Query 03 only considers accounts with 2+ transfers** (`HAVING COUNT(*) > 1`). In PaySim almost every origin account appears in a single transaction, so an "average per account" over one value is meaningless.
@@ -89,6 +90,8 @@ Notes:
   | only fraudulent transfers, cash-out not before the transfer (`c.step >= t.step`) | 1 |
 
   The 572 linked pairs are coincidences: the account cashed out early and received a transfer later, with unrelated amounts. The single fraudulent pair cashes out 18,091.05 about 481 hours after receiving 1,282,971.57, and that cash-out is not flagged as fraud. In this synthetic dataset, fraud chains cannot be followed through account names, so the draining pattern has to be studied per transaction (query 02) rather than as a transfer-to-cash-out chain.
+
+- **Query 05 groups by day, not by `step`.** `step` is one hour, so the day is `(step - 1) / 24 + 1` (integer division in PostgreSQL), giving days 1 to 31. The running total is a window function over a CTE with the daily counts. As a check, the running total on day 31 equals `SELECT SUM(is_fraud) FROM transactions`. Fraud is steady across the month, between about 240 and 350 cases per day, with no outlier day. That fits a synthetic dataset where fraud is injected at a roughly constant pace.
 
 ## How to reproduce
 
@@ -104,7 +107,7 @@ Analysis
 - [x] Fraud rate by transaction type
 - [x] Account-draining pattern: drained transactions counted (query 02); `TRANSFER` followed by `CASH_OUT` tested with a self-join (query 04), pattern not present in the data
 - [x] Customer-level averages (mean transfer amount)
-- [ ] Fraud over time (`step`), e.g. fraud per day and a running total (window functions)
+- [x] Fraud over time (`step`): fraud per day and a running total (CTE + window function)
 
 Preparing the database for Python and Power BI
 - [ ] Indexes on `transactions` foreign keys, `type` and `is_fraud`, and a comparison of query times (`EXPLAIN ANALYZE`)
